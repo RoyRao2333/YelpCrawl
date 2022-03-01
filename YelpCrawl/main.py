@@ -82,8 +82,8 @@ def parse(self, file):
         .attrs["src"]
     comment = soup\
         .find("div", id="wrap")\
-        .find("div", class_="caption selected-photo-caption-text")
-    comment = comment.get_text() if comment.get_text() is not None else "None"
+        .find("div", class_="caption selected-photo-caption-text")\
+        .get_text()
     date = soup \
         .find("div", id="wrap")\
         .find("div", class_="selected-photo-details")\
