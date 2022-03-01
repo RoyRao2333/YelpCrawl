@@ -9,9 +9,10 @@ from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 
 # init driver
-service = Service("/usr/local/bin/msedgedriver")
+service = Service(os.path.join(os.getcwd(), "resource/msedgedriver"))
 service.start()
 driver = webdriver.Remote(service.service_url)
+
 
 def find_element_by_xpath(self, xpath):
     return self.find_element(by=By.XPATH, value=xpath)
@@ -23,11 +24,13 @@ def makedir(path):
     if not folder:
         os.makedirs(path)
 
-def save_img(url, name):
+
+def save_img(img_url, name):
     image_folder = os.getcwd() + "/results/img/"
     makedir(image_folder)
     image_path = os.path.join(image_folder, name + ".jpg")
-    urlretrieve(url, image_path)
+    urlretrieve(img_url, image_path)
+
 
 def get_input():
     input_file = open(os.getcwd() + "/stores.csv", mode="r", encoding="utf-8-sig")
@@ -41,17 +44,24 @@ def get_input():
 
     return input_list
 
+
 def crawl(self, file):
-    parse(self, file)
+    if find_element_by_xpath(self, "//*[@title='Next']") is None:
+        print("Process ended due to a network error. Retrying...")
+        self.refresh()
+        time.sleep(2)
+        crawl(self, file)
+    else:
+        parse(self, file)
 
     if find_element_by_xpath(self, "//*[@title='Next']").get_attribute("href") is None:
+        print("Process completed.")
         return
     else:
-        time.sleep(5)
+        time.sleep(2)
         find_element_by_xpath(self, "//*[@title='Next']").click()
         crawl(self, file)
 
-    file.flush()
 
 def get_entrance(self):
     raw = self.page_source
@@ -61,53 +71,54 @@ def get_entrance(self):
     inner_url = "https://www.yelp.com" + ul.find("li").find("a").attrs["href"]
     return inner_url
 
+
 def parse(self, file):
     writer = csv.writer(file)
     raw = self.page_source
     soup = BeautifulSoup(raw, "lxml")
-    title = soup\
-        .find("div", id="wrap")\
-        .find("div", class_="arrange_unit arrange_unit--fill")\
-        .find("h1")\
+    title = soup \
+        .find("div", id="wrap") \
+        .find("div", class_="arrange_unit arrange_unit--fill") \
+        .find("h1") \
         .get_text()
-    index = soup\
-        .find("div", id="wrap")\
-        .find("ul", class_="media-footer_inner")\
-        .find("li", class_="media-footer_count")\
-        .find("span", class_="media-count_current")\
+    index = soup \
+        .find("div", id="wrap") \
+        .find("ul", class_="media-footer_inner") \
+        .find("li", class_="media-footer_count") \
+        .find("span", class_="media-count_current") \
         .get_text()
-    img = soup\
-        .find("div", id="wrap")\
-        .find("img", class_="photo-box-img")\
+    img = soup \
+        .find("div", id="wrap") \
+        .find("img", class_="photo-box-img") \
         .attrs["src"]
-    comment = soup\
-        .find("div", id="wrap")\
-        .find("div", class_="caption selected-photo-caption-text")\
+    comment = soup \
+        .find("div", id="wrap") \
+        .find("div", class_="caption selected-photo-caption-text") \
         .get_text()
     date = soup \
-        .find("div", id="wrap")\
-        .find("div", class_="selected-photo-details")\
-        .find("span")\
+        .find("div", id="wrap") \
+        .find("div", class_="selected-photo-details") \
+        .find("span") \
         .get_text()
     passport = soup \
-        .find("div", id="wrap")\
+        .find("div", id="wrap") \
         .find("div", class_="media-info")
     username = ""
     is_merchant = ""
 
     info = passport.find("ul", class_="user-passport-info")
     if info:
-        username = info\
-            .find("li", class_="user-name")\
-            .find("a", id="dropdown_user-name")\
+        username = info \
+            .find("li", class_="user-name") \
+            .find("a", id="dropdown_user-name") \
             .get_text()
         is_merchant = "No"
     else:
-        username = passport\
-            .find("li")\
-            .find("strong")\
-            .find("a")\
-            .find("span")\
+        username = passport \
+            .find("li") \
+            .find("strong") \
+            .find("a") \
+            .find("span") \
             .get_text()
         is_merchant = "Yes"
 
@@ -122,6 +133,7 @@ def parse(self, file):
     ])
     file.flush()
     print("Fetched " + image_name)
+
 
 if __name__ == '__main__':
     # get paths
