@@ -5,14 +5,14 @@ import re
 from urllib.request import urlretrieve
 from urllib.parse import urlparse, parse_qsl
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
+from pathlib import Path
 
 # init driver
-service = Service(os.path.join(os.getcwd(), "resource/msedgedriver"))
-service.start()
-driver = webdriver.Remote(service.service_url)
+option = webdriver.ChromeOptions()
+option.headless = True
+driver = webdriver.Chrome(options=option)
 
 
 def find_element_by_xpath(self, xpath):
@@ -27,14 +27,15 @@ def makedir(path):
 
 
 def save_img(img_url, name):
-    image_folder = os.getcwd() + "/results/img/"
+    image_folder = "./Desktop/YelpResults/img/"
     makedir(image_folder)
     image_path = os.path.join(image_folder, name + ".jpg")
     urlretrieve(img_url, image_path)
 
 
 def get_input():
-    input_file = open(os.getcwd() + "/stores.csv", mode="r", encoding="utf-8-sig")
+    input_path = Path(__file__).with_name("stores.csv")
+    input_file = input_path.open(mode="r", encoding="utf-8-sig")
     csv_reader = csv.reader(input_file)
     input_list = list()
 
@@ -101,10 +102,16 @@ def parse(self, file):
         .find("div", class_="selected-photo-details") \
         .find("span") \
         .get_text()
+    merchant_url = soup \
+        .find("link", attrs={"href": re.compile(r".*ios-app.*")}) \
+        .attrs["href"]
+    parsed = urlparse(merchant_url)
+    params = dict(parse_qsl(parsed.query))
+    business_id = params["biz_id"]
+
     passport = soup \
         .find("div", id="wrap") \
         .find("div", class_="media-info")
-
     info = passport.find("ul", class_="user-passport-info")
     if info:
         userurl = "https://www.yelp.com/" + info \
@@ -116,19 +123,15 @@ def parse(self, file):
         userid = params["userid"]
         is_merchant = "No"
     else:
-        merchant_url = soup \
-            .find("link", attrs={"href": re.compile(r".*ios-app.*")}) \
-            .attrs["href"]
-        parsed = urlparse(merchant_url)
-        params = dict(parse_qsl(parsed.query))
-        userid = params["biz_id"]
+        userid = ""
         is_merchant = "Yes"
 
-    image_name = title + " " + index
+    image_name = index + " in " + title
     save_img(img, image_name)
     writer.writerow([
         image_name,
         comment,
+        business_id,
         userid,
         is_merchant,
         date
@@ -139,11 +142,11 @@ def parse(self, file):
 
 if __name__ == '__main__':
     # get paths
-    makedir(os.path.join(os.getcwd(), "results"))
-    output_file = open(os.path.join(os.getcwd(), "results/manifest.csv"), "w", encoding="utf-8-sig")
+    makedir("./Desktop/YelpResults")
+    output_file = open("./Desktop/YelpResults/manifest.csv", "w", encoding="utf-8-sig")
 
     csv_writer = csv.writer(output_file)
-    csv_writer.writerow(["img", "comment", "user_id", "is_merchant", "date"])
+    csv_writer.writerow(["img", "comment", "business_id", "user_id", "is_merchant", "date"])
 
     # do your job
     for store_url in get_input():
