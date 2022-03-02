@@ -3,6 +3,7 @@ import csv
 import time
 import re
 from urllib.request import urlretrieve
+from urllib.parse import urlparse, parse_qsl
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -103,23 +104,24 @@ def parse(self, file):
     passport = soup \
         .find("div", id="wrap") \
         .find("div", class_="media-info")
-    username = ""
-    is_merchant = ""
 
     info = passport.find("ul", class_="user-passport-info")
     if info:
-        username = info \
+        userurl = "https://www.yelp.com/" + info \
             .find("li", class_="user-name") \
             .find("a", id="dropdown_user-name") \
-            .get_text()
+            .attrs["href"]
+        parsed = urlparse(userurl)
+        params = dict(parse_qsl(parsed.query))
+        userid = params["userid"]
         is_merchant = "No"
     else:
-        username = passport \
-            .find("li") \
-            .find("strong") \
-            .find("a") \
-            .find("span") \
-            .get_text()
+        merchant_url = soup \
+            .find("link", attrs={"href": re.compile(r".*ios-app.*")}) \
+            .attrs["href"]
+        parsed = urlparse(merchant_url)
+        params = dict(parse_qsl(parsed.query))
+        userid = params["biz_id"]
         is_merchant = "Yes"
 
     image_name = title + " " + index
@@ -127,7 +129,7 @@ def parse(self, file):
     writer.writerow([
         image_name,
         comment,
-        username,
+        userid,
         is_merchant,
         date
     ])
@@ -141,7 +143,7 @@ if __name__ == '__main__':
     output_file = open(os.path.join(os.getcwd(), "results/manifest.csv"), "w", encoding="utf-8-sig")
 
     csv_writer = csv.writer(output_file)
-    csv_writer.writerow(["img", "comment", "username", "isMerchant", "date"])
+    csv_writer.writerow(["img", "comment", "user_id", "is_merchant", "date"])
 
     # do your job
     for store_url in get_input():
