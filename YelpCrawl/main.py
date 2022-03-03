@@ -2,21 +2,45 @@ import os
 import csv
 import time
 import re
+import requests
 from urllib.request import urlretrieve
 from urllib.parse import urlparse, parse_qsl
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import WebDriverException
 from bs4 import BeautifulSoup
 from pathlib import Path
 
 # init driver
 option = webdriver.ChromeOptions()
-option.headless = True
+# option.headless = True
 driver = webdriver.Chrome(options=option)
 
 
 def find_element_by_xpath(self, xpath):
     return self.find_element(by=By.XPATH, value=xpath)
+
+
+def find_elements_by_xpath(self, xpath):
+    return self.find_elements(by=By.XPATH, value=xpath)
+
+
+def find_element_by_id(self, value):
+    return self.find_elements(by=By.ID, value=value)
+
+
+def wait_for_element_by_id(self, value):
+    return WebDriverWait(self, 10).until(EC.presence_of_element_located((By.ID, value)))
+
+
+def wait_for_element_by_xpath(self, value):
+    return WebDriverWait(self, 10).until(EC.presence_of_element_located((By.XPATH, value)))
+
+
+def find_elements_by_class_name(self, class_name):
+    return self.find_elements(by=By.CLASS_NAME, value=class_name)
 
 
 def makedir(path):
@@ -45,41 +69,58 @@ def get_input():
 
 
 def crawl(self, file):
-    if find_element_by_xpath(self, "//*[@title='Next']") is None:
+    for tab_element in find_elements_by_xpath(self, "//*[@class='tab-link js-tab-link tab-link--nav js-tab-link--nav']"):
+        tab_label = tab_element.get_attribute("data-media-tab-label") == "all"
+        if tab_label == "all":
+            continue
+
+        tab_element.click()
+        time.sleep(2)
+        # click first image item
+        find_element_by_xpath(self, "//*[@class='biz-shim js-lightbox-media-link js-analytics-click']").click()
+
+        iterate(self, file)
+
+        print("Tab {} completed.".format(tab_label))
+
+
+def iterate(self, file):
+    try:
+        wait_for_element_by_id(self, "lightbox")
+    except WebDriverException:
         print("Process ended due to a network error. Retrying...")
         self.refresh()
         time.sleep(2)
-        crawl(self, file)
+        iterate(self, file)
     else:
         parse(self, file)
 
-    if find_element_by_xpath(self, "//*[@title='Next']").get_attribute("href") is None:
-        print("Process completed.")
+    try:
+        next_element = find_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
+        if next_element.get_attribute("href") is None:
+            find_element_by_xpath(self, "//*[@id='lightbox-inner']/div").click()
+            return
+
+        time.sleep(1)
+        find_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]").click()
+        iterate(self, file)
+    except WebDriverException:
+        find_element_by_xpath(self, "//*[@id='lightbox-inner']/div").click()
         return
-    else:
-        time.sleep(2)
-        find_element_by_xpath(self, "//*[@title='Next']").click()
-        crawl(self, file)
-
-
-def get_entrance(self):
-    raw = self.page_source
-    soup = BeautifulSoup(raw, "lxml")
-    div = soup.find("div", class_="media-landing_gallery photos")
-    ul = div.find("ul")
-    inner_url = "https://www.yelp.com" + ul.find("li").find("a").attrs["href"]
-    return inner_url
 
 
 def parse(self, file):
     writer = csv.writer(file)
-    raw = self.page_source
-    soup = BeautifulSoup(raw, "lxml")
-    title = soup \
+    outer_raw = self.page_source
+    soup = BeautifulSoup(outer_raw, "lxml")
+    tab_label = soup \
         .find("div", id="wrap") \
-        .find("div", class_="arrange_unit arrange_unit--fill") \
-        .find("h1") \
+        .find("a", class_=re.compile(r".*tab-link.*is-selected.*")) \
+        .find("span", class_="tab-link_label") \
         .get_text()
+
+    inner_raw = requests.get(self.current_url).text
+    soup = BeautifulSoup(inner_raw, "lxml")
     index = soup \
         .find("div", id="wrap") \
         .find("ul", class_="media-footer_inner") \
@@ -117,10 +158,11 @@ def parse(self, file):
         userid = ""
         is_merchant = "Yes"
 
-    image_name = index + " in " + title
+    image_name = "[" + tab_label + "]" + " " + index
     image_path = os.path.join(img_folder_path, image_name + ".jpg")
     save_img(img, image_path)
     writer.writerow([
+        tab_label,
         image_name,
         comment,
         userid,
@@ -131,25 +173,28 @@ def parse(self, file):
     print("Fetched " + image_name)
 
 
+
 if __name__ == '__main__':
     makedir("./Desktop/YelpResults")
 
     # do your job
     for business_id in get_input():
         driver.get("https://www.yelp.com/biz_photos/" + business_id)
-        url = get_entrance(driver)
-        driver.get(url)
 
+        # prepare dirs
         folder_path = os.path.join("./Desktop/YelpResults/", business_id)
         makedir(folder_path)
         img_folder_path = os.path.join(folder_path, "img")
         makedir(img_folder_path)
         output_file_path = os.path.join(folder_path, "manifest.csv")
+
         output_file = open(output_file_path, "w", encoding="utf-8-sig")
         csv_writer = csv.writer(output_file)
-        csv_writer.writerow(["img", "comment", "user_id", "is_merchant", "date"])
+        csv_writer.writerow(["category", "img", "comment", "user_id", "is_merchant", "date"])
         crawl(driver, output_file)
         output_file.close()
+
+        print("Business_id {} completed.".format(business_id))
 
     # deinit
     driver.quit()
