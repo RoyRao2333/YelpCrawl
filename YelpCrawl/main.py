@@ -26,11 +26,8 @@ def makedir(path):
         os.makedirs(path)
 
 
-def save_img(img_url, name):
-    image_folder = "./Desktop/YelpResults/img/"
-    makedir(image_folder)
-    image_path = os.path.join(image_folder, name + ".jpg")
-    urlretrieve(img_url, image_path)
+def save_img(img_url, path):
+    urlretrieve(img_url, path)
 
 
 def get_input():
@@ -102,12 +99,6 @@ def parse(self, file):
         .find("div", class_="selected-photo-details") \
         .find("span") \
         .get_text()
-    merchant_url = soup \
-        .find("link", attrs={"href": re.compile(r".*ios-app.*")}) \
-        .attrs["href"]
-    parsed = urlparse(merchant_url)
-    params = dict(parse_qsl(parsed.query))
-    business_id = params["biz_id"]
 
     passport = soup \
         .find("div", id="wrap") \
@@ -127,11 +118,11 @@ def parse(self, file):
         is_merchant = "Yes"
 
     image_name = index + " in " + title
-    save_img(img, image_name)
+    image_path = os.path.join(img_folder_path, image_name + ".jpg")
+    save_img(img, image_path)
     writer.writerow([
         image_name,
         comment,
-        business_id,
         userid,
         is_merchant,
         date
@@ -141,20 +132,24 @@ def parse(self, file):
 
 
 if __name__ == '__main__':
-    # get paths
     makedir("./Desktop/YelpResults")
-    output_file = open("./Desktop/YelpResults/manifest.csv", "w", encoding="utf-8-sig")
-
-    csv_writer = csv.writer(output_file)
-    csv_writer.writerow(["img", "comment", "business_id", "user_id", "is_merchant", "date"])
 
     # do your job
-    for store_url in get_input():
-        driver.get(store_url)
+    for business_id in get_input():
+        driver.get("https://www.yelp.com/biz_photos/" + business_id)
         url = get_entrance(driver)
         driver.get(url)
+
+        folder_path = os.path.join("./Desktop/YelpResults/", business_id)
+        makedir(folder_path)
+        img_folder_path = os.path.join(folder_path, "img")
+        makedir(img_folder_path)
+        output_file_path = os.path.join(folder_path, "manifest.csv")
+        output_file = open(output_file_path, "w", encoding="utf-8-sig")
+        csv_writer = csv.writer(output_file)
+        csv_writer.writerow(["img", "comment", "user_id", "is_merchant", "date"])
         crawl(driver, output_file)
+        output_file.close()
 
     # deinit
-    output_file.close()
     driver.quit()
