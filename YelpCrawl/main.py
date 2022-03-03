@@ -15,7 +15,7 @@ from pathlib import Path
 
 # init driver
 option = webdriver.ChromeOptions()
-# option.headless = True
+option.headless = True
 driver = webdriver.Chrome(options=option)
 
 
