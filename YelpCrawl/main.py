@@ -55,8 +55,6 @@ def save_img(img_url, path):
 
 
 def get_input():
-    input_path = Path(__file__).with_name("stores.csv")
-    input_file = input_path.open(mode="r", encoding="utf-8-sig")
     csv_reader = csv.reader(input_file)
     input_list = list()
 
@@ -68,10 +66,10 @@ def get_input():
     return input_list
 
 
-def crawl(self, file):
+def crawl(self, file, retry: int):
     for tab_element in find_elements_by_xpath(self, "//*[@class='tab-link js-tab-link tab-link--nav js-tab-link--nav']"):
-        tab_label = tab_element.get_attribute("data-media-tab-label") == "all"
-        if tab_label == "all":
+        tab_label = tab_element.get_attribute("data-media-tab-label")
+        if tab_label in finished_tabs or tab_label == "all":
             continue
 
         tab_element.click()
@@ -79,34 +77,39 @@ def crawl(self, file):
         # click first image item
         find_element_by_xpath(self, "//*[@class='biz-shim js-lightbox-media-link js-analytics-click']").click()
 
-        iterate(self, file)
+        if iterate(self, file):
+            finished_tabs.append(tab_label)
+            print(f"Tab {tab_label} completed.")
 
-        print("Tab {} completed.".format(tab_label))
+        else:
+            print("Process ended due to a network error. Retrying...")
+            self.get(entrance_url)
+            time.sleep(2)
 
 
-def iterate(self, file):
-    try:
-        wait_for_element_by_id(self, "lightbox")
-    except WebDriverException:
-        print("Process ended due to a network error. Retrying...")
-        self.refresh()
-        time.sleep(2)
-        iterate(self, file)
-    else:
-        parse(self, file)
+def iterate(self, file) -> bool:
+    while True:
+        try:
+            wait_for_element_by_id(self, "lightbox")
+        except WebDriverException:
+            return False
+        else:
+            parse(self, file)
 
-    try:
-        next_element = find_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
-        if next_element.get_attribute("href") is None:
-            find_element_by_xpath(self, "//*[@id='lightbox-inner']/div").click()
-            return
+        try:
+            next_element = find_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
+            close_element = find_element_by_xpath(self, "//*[@id='lightbox-inner']/div")
 
-        time.sleep(1)
-        find_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]").click()
-        iterate(self, file)
-    except WebDriverException:
-        find_element_by_xpath(self, "//*[@id='lightbox-inner']/div").click()
-        return
+        except WebDriverException:
+            return True
+
+        else:
+            if next_element.get_attribute("href") is None:
+                close_element.click()
+                return True
+
+            time.sleep(1)
+            next_element.click()
 
 
 def parse(self, file):
@@ -158,7 +161,7 @@ def parse(self, file):
         userid = ""
         is_merchant = "Yes"
 
-    image_name = "[" + tab_label + "]" + " " + index
+    image_name = f"[{tab_label}] {index}"
     image_path = os.path.join(img_folder_path, image_name + ".jpg")
     save_img(img, image_path)
     writer.writerow([
@@ -173,13 +176,18 @@ def parse(self, file):
     print("Fetched " + image_name)
 
 
-
 if __name__ == '__main__':
     makedir("./Desktop/YelpResults")
 
+    input_path = Path(__file__).with_name("stores.csv")
+    input_file = input_path.open(mode="r", encoding="utf-8-sig")
+
     # do your job
     for business_id in get_input():
-        driver.get("https://www.yelp.com/biz_photos/" + business_id)
+        entrance_url = "https://www.yelp.com/biz_photos/" + business_id
+        driver.get(entrance_url)
+
+        finished_tabs = list()
 
         # prepare dirs
         folder_path = os.path.join("./Desktop/YelpResults/", business_id)
@@ -191,9 +199,11 @@ if __name__ == '__main__':
         output_file = open(output_file_path, "w", encoding="utf-8-sig")
         csv_writer = csv.writer(output_file)
         csv_writer.writerow(["category", "img", "comment", "user_id", "is_merchant", "date"])
-        crawl(driver, output_file)
+        crawl(driver, output_file, retry=0)
         output_file.close()
 
+        # flag_writer = csv.writer(input_file)
+        # flag_writer.writerow()
         print("Business_id {} completed.".format(business_id))
 
     # deinit
