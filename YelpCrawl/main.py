@@ -66,7 +66,7 @@ def get_input():
     return input_list
 
 
-def crawl(self, file, retry: int):
+def crawl(self, file):
     for tab_element in find_elements_by_xpath(self, "//*[@class='tab-link js-tab-link tab-link--nav js-tab-link--nav']"):
         tab_label = tab_element.get_attribute("data-media-tab-label")
         if tab_label in finished_tabs or tab_label == "all":
@@ -199,11 +199,11 @@ if __name__ == '__main__':
         output_file = open(output_file_path, "w", encoding="utf-8-sig")
         csv_writer = csv.writer(output_file)
         csv_writer.writerow(["category", "img", "comment", "user_id", "is_merchant", "date"])
-        crawl(driver, output_file, retry=0)
+        crawl(driver, output_file)
         output_file.close()
 
-        # flag_writer = csv.writer(input_file)
-        # flag_writer.writerow()
+        flag_writer = csv.writer(input_file)
+        flag_writer.writerow()
         print("Business_id {} completed.".format(business_id))
 
     # deinit
