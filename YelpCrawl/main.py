@@ -2,20 +2,18 @@ import os
 import csv
 import time
 import re
-import requests
+import uuid
 from urllib.request import urlretrieve
-from urllib.parse import urlparse, parse_qsl
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import WebDriverException
-from bs4 import BeautifulSoup
 from pathlib import Path
 
 # init driver
 option = webdriver.ChromeOptions()
-option.headless = True
+# option.headless = True
 driver = webdriver.Chrome(options=option)
 
 
@@ -41,6 +39,10 @@ def wait_for_element_by_xpath(self, value):
 
 def find_elements_by_class_name(self, class_name):
     return self.find_elements(by=By.CLASS_NAME, value=class_name)
+
+
+def wait_for_staleness(self, element):
+    WebDriverWait(self, 10).until(EC.staleness_of(element))
 
 
 def makedir(path):
@@ -97,78 +99,103 @@ def iterate(self, file) -> bool:
             parse(self, file)
 
         try:
-            next_element = find_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
-            close_element = find_element_by_xpath(self, "//*[@id='lightbox-inner']/div")
+            next_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
 
         except WebDriverException:
+            try:
+                close_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[1]")
+                close_element.click()
+            except WebDriverException:
+                pass
+
             return True
 
         else:
             if next_element.get_attribute("href") is None:
-                close_element.click()
+                try:
+                    close_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[1]")
+                    close_element.click()
+                except WebDriverException:
+                    pass
+
                 return True
 
-            time.sleep(1)
             next_element.click()
+            time.sleep(2)
 
 
 def parse(self, file):
     writer = csv.writer(file)
-    outer_raw = self.page_source
-    soup = BeautifulSoup(outer_raw, "lxml")
-    tab_label = soup \
-        .find("div", id="wrap") \
-        .find("a", class_=re.compile(r".*tab-link.*is-selected.*")) \
-        .find("span", class_="tab-link_label") \
-        .get_text()
 
-    inner_raw = requests.get(self.current_url).text
-    soup = BeautifulSoup(inner_raw, "lxml")
-    index = soup \
-        .find("div", id="wrap") \
-        .find("ul", class_="media-footer_inner") \
-        .find("li", class_="media-footer_count") \
-        .find("span", class_="media-count_current") \
-        .get_text()
-    img = soup \
-        .find("div", id="wrap") \
-        .find("img", class_="photo-box-img") \
-        .attrs["src"]
-    comment = soup \
-        .find("div", id="wrap") \
-        .find("div", class_="caption selected-photo-caption-text") \
-        .get_text()
-    date = soup \
-        .find("div", id="wrap") \
-        .find("div", class_="selected-photo-details") \
-        .find("span") \
-        .get_text()
-
-    passport = soup \
-        .find("div", id="wrap") \
-        .find("div", class_="media-info")
-    info = passport.find("ul", class_="user-passport-info")
-    if info:
-        userurl = "https://www.yelp.com/" + info \
-            .find("li", class_="user-name") \
-            .find("a", id="dropdown_user-name") \
-            .attrs["href"]
-        parsed = urlparse(userurl)
-        params = dict(parse_qsl(parsed.query))
-        userid = params["userid"]
+    try:
+        user_id = find_element_by_xpath(
+            self,
+            "//a[contains(@class, 'user-display-name')]"
+        ).text
         is_merchant = "No"
-    else:
-        userid = ""
-        is_merchant = "Yes"
+    except WebDriverException:
+        try:
+            user_id = find_element_by_xpath(
+                self,
+                "//a[@data-analytics-label='biz-name']/span"
+            ).text
+            is_merchant = "Yes"
+        except WebDriverException:
+            user_id = ""
+            is_merchant = ""
 
-    image_name = f"[{tab_label}] {index}"
-    image_path = os.path.join(img_folder_path, image_name + ".jpg")
-    save_img(img, image_path)
+    try:
+        tab_label = find_element_by_xpath(
+            self,
+            "//a[@role='tab'][contains(@class, 'is-selected')]/span[contains(@class, 'tab-link_label')]"
+        ).text
+    except WebDriverException:
+        tab_label = ""
+
+    try:
+        comment = find_element_by_xpath(
+            self,
+            "//div[contains(@class, 'selected-photo-caption-text')]"
+        ).text
+    except WebDriverException:
+        comment = ""
+
+    try:
+        index = find_element_by_xpath(
+            self,
+            "//span[@class='media-count_current']"
+        ).text
+    except WebDriverException:
+        index = ""
+
+    try:
+        img = wait_for_element_by_xpath(
+            self,
+            "//img[@class='photo-box-img'][@loading='auto']"
+        ).get_attribute("src")
+    except WebDriverException:
+        img = ""
+
+    try:
+        date = find_element_by_xpath(
+            self,
+            "//span[contains(@class, 'selected-photo-upload-date')]"
+        ).text
+    except WebDriverException:
+        date = ""
+
+    if img:
+        image_name = f"[{tab_label}] {index}" if index else f"[{tab_label}] {uuid.uuid4().hex}"
+        image_path = os.path.join(img_folder_path, image_name + ".jpg")
+        save_img(img, image_path)
+    else:
+        image_name = "N/A"
+
     writer.writerow([
         tab_label,
         image_name,
         comment,
-        userid,
+        user_id,
         is_merchant,
         date
     ])
