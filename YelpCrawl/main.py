@@ -3,11 +3,12 @@ import csv
 import time
 import re
 import uuid
+import pickle
 from urllib.request import urlretrieve
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support import expected_conditions as ec
 from selenium.common.exceptions import WebDriverException
 from pathlib import Path
 
@@ -30,11 +31,11 @@ def find_element_by_id(self, value):
 
 
 def wait_for_element_by_id(self, value):
-    return WebDriverWait(self, 10).until(EC.presence_of_element_located((By.ID, value)))
+    return WebDriverWait(self, 10).until(ec.presence_of_element_located((By.ID, value)))
 
 
 def wait_for_element_by_xpath(self, value):
-    return WebDriverWait(self, 10).until(EC.presence_of_element_located((By.XPATH, value)))
+    return WebDriverWait(self, 10).until(ec.presence_of_element_located((By.XPATH, value)))
 
 
 def find_elements_by_class_name(self, class_name):
@@ -42,7 +43,7 @@ def find_elements_by_class_name(self, class_name):
 
 
 def wait_for_staleness(self, element):
-    WebDriverWait(self, 10).until(EC.staleness_of(element))
+    WebDriverWait(self, 10).until(ec.staleness_of(element))
 
 
 def makedir(path):
@@ -121,7 +122,7 @@ def iterate(self, file) -> bool:
 
                 return True
 
-            time.sleep(1)
+            time.sleep(2)
             try:
                 wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]").click()
             except WebDriverException:
@@ -217,6 +218,14 @@ if __name__ == '__main__':
     for business_id in get_input():
         entrance_url = "https://www.yelp.com/biz_photos/" + business_id
         driver.get(entrance_url)
+
+        cookie_path = Path(__file__).with_name("cookies.pkl")
+        if cookie_path.is_file():
+            cookies = pickle.load(cookie_path.open(mode="rb"))
+            for cookie in cookies:
+                driver.add_cookie(cookie)
+        else:
+            pickle.dump(driver.get_cookies(), cookie_path.open(mode="wb"))
 
         finished_tabs = list()
 
