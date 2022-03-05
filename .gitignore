@@ -400,3 +400,4 @@ cython_debug/
 YelpCrawl/results
 YelpCrawl/resource
 YelpCrawl/Desktop
+cookies.pkl
