@@ -92,14 +92,18 @@ def save_img(img_url, path) -> bool:
         return False
 
 
-def get_param_from_url(url: str, key: str) -> str:
-    parsed = urlparse(url)
-    params = dict(parse_qsl(parsed.query))
-    return params[key] if params[key] is not None else ""
+def get_param_from_url(url: str, key: str):
+    try:
+        parsed = urlparse(url)
+        params = dict(parse_qsl(parsed.query))
+        return params[key] if params[key] is not None else ""
+
+    except ValueError:
+        return None
 
 
-def get_input():
-    csv_reader = csv.reader(input_file)
+def get_input(file):
+    csv_reader = csv.reader(file)
     input_list = list()
 
     for line in csv_reader:
@@ -110,54 +114,48 @@ def get_input():
     return input_list
 
 
-def crawl(self, file):
+def crawl(self, output) -> bool:
     tab_list = find_elements_by_xpath(self, "//a[contains(@class, 'tab-link--nav')][contains(@class, 'js-tab-link--nav')]")
     if not tab_list:
-        store_error_writer.writerow([self.current_url])
-        print("Network error, retry this store later...")
-        return
+        return False
 
     for tab_element in tab_list:
         try:
             tab_element.click()
-            time.sleep(2)
         except WebDriverException:
-            store_error_writer.writerow([self.current_url])
-            print("Network error, retry this store later...")
-            return
+            return False
 
+        time.sleep(2)
         tab_label_e = find_element_by_xpath(tab_element, "./span[2]")
         tab_label = tab_label_e.text if tab_label_e is not None else ""
-        if tab_label in finished_tabs or "all" in tab_label.lower():
+
+        if "all" in tab_label.lower():
             continue
+
         # click first image item
         first_img = find_element_by_xpath(self, "//*[@class='biz-shim js-lightbox-media-link js-analytics-click']")
         if first_img is None or not tab_label:
-            store_error_writer.writerow([self.current_url])
-            print("Network error, retry this store later...")
-            return
+            return False
 
         first_img.click()
 
-        if iterate(self, file):
-            finished_tabs.append(tab_label)
+        if iterate(self, output):
             print(f"Tab {tab_label} completed.")
 
         else:
-            print("Process ended due to a network error. Retrying...")
-            self.get(entrance_url)
-            time.sleep(2)
-
-
-
-def iterate(self, file) -> bool:
-    while True:
-        try:
-            wait_for_element_by_id(self, "lightbox")
-        except WebDriverException:
             return False
+
+    return True
+
+
+
+def iterate(self, output) -> bool:
+    while True:
+        if wait_for_element_by_id(self, "lightbox") is None:
+            return False
+
         else:
-            parse(self, file)
+            parse(self, output)
 
         next_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
 
@@ -169,10 +167,12 @@ def iterate(self, file) -> bool:
 
         else:
             time.sleep(2)
+
             try:
-                wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]").click()
+                next_element.click()
+
             except WebDriverException:
-                return True
+                return False
 
 
 def parse(self, file) -> bool:
@@ -223,7 +223,11 @@ def parse(self, file) -> bool:
     if img:
         image_name = f"[{tab_label}] {index}"
         image_path = os.path.join(img_folder_path, image_name + ".jpg")
-        save_img(img, image_path)
+        save_success = save_img(img, image_path)
+
+        if not save_success:
+            pic_error_writer.writerow([self.current_url])
+            return False
 
     else:
         pic_error_writer.writerow([self.current_url])
@@ -249,6 +253,76 @@ def parse(self, file) -> bool:
         return False
 
 
+def retry() -> bool:
+    global folder_path
+    global img_folder_path
+    global output_file_path
+    global output_file
+    global output_writer
+
+    store_error_list = get_input(store_error_file)
+    store_error_mutable_list = get_input(store_error_file)
+    for biz_url in store_error_list:
+        driver.get(biz_url)
+
+        biz_element = find_element_by_xpath(driver, "//link[contains(@href, 'biz_id')]")
+        if biz_element is not None:
+            ori_link = biz_element.get_attribute("href")
+            biz_id = get_param_from_url(ori_link, "biz_id")
+
+        else:
+            print("Network error, retry this store later...")
+            continue
+
+        folder_path = os.path.join("./Desktop/YelpResults/", biz_id)
+        img_folder_path = os.path.join(folder_path, "img")
+        output_file_path = os.path.join(folder_path, "manifest.csv")
+        output_file = open(output_file_path, "w", encoding="utf-8-sig")
+
+        if not crawl(driver, output_file):
+            print("Network error, retry this store later...")
+        else:
+            print("Business_id {} completed.".format(business_id))
+            store_error_mutable_list.remove(biz_url)
+
+        output_file.close()
+
+    pic_error_list = get_input(pic_error_file)
+    pic_error_mutable_list = get_input(pic_error_file)
+    for img_url in pic_error_list:
+        driver.get(img_url)
+
+        biz_element = find_element_by_xpath(driver, "//link[contains(@href, 'biz_id')]")
+        if biz_element is not None:
+            ori_link = biz_element.get_attribute("href")
+            biz_id = get_param_from_url(ori_link, "biz_id")
+
+        else:
+            print("Network error, retry this store later...")
+            continue
+
+        folder_path = os.path.join("./Desktop/YelpResults/", biz_id)
+        img_folder_path = os.path.join(folder_path, "img")
+        output_file_path = os.path.join(folder_path, "manifest.csv")
+        output_file = open(output_file_path, "w", encoding="utf-8-sig")
+
+        if not parse(driver, output_file):
+            print("Network error, retry this store later...")
+        else:
+            print("Business_id {} completed.".format(business_id))
+            pic_error_mutable_list.remove(img_url)
+
+        output_file.close()
+
+    for item in store_error_mutable_list:
+        store_error_writer.writerow([item])
+
+    for item in pic_error_mutable_list:
+        pic_error_writer.writerow([item])
+
+    return not store_error_mutable_list and not pic_error_mutable_list
+
+
 if __name__ == '__main__':
     makedir("./Desktop/YelpResults/errors")
 
@@ -262,7 +336,7 @@ if __name__ == '__main__':
     pic_error_writer = csv.writer(pic_error_file)
 
     # do your job
-    for business_id in get_input():
+    for business_id in get_input(input_file):
         entrance_url = "https://www.yelp.com/biz_photos/" + business_id
         driver.get(entrance_url)
 
@@ -274,8 +348,6 @@ if __name__ == '__main__':
         else:
             pickle.dump(driver.get_cookies(), cookie_path.open(mode="wb"))
 
-        finished_tabs = list()
-
         # prepare dirs
         folder_path = os.path.join("./Desktop/YelpResults/", business_id)
         makedir(folder_path)
@@ -286,10 +358,19 @@ if __name__ == '__main__':
         output_file = open(output_file_path, "w", encoding="utf-8-sig")
         output_writer = csv.writer(output_file)
         output_writer.writerow(["category", "img", "comment", "user_id", "is_merchant", "date"])
-        crawl(driver, output_file)
+
+        if not crawl(driver, output_file):
+            store_error_writer.writerow([driver.current_url])
+            print("Network error, retry this store later...")
+        else:
+            print("Business_id {} completed.".format(business_id))
+
         output_file.close()
 
-        print("Business_id {} completed.".format(business_id))
+    while not retry():
+        continue
+
+    print("All retries completed.")
 
     # deinit
     driver.quit()
