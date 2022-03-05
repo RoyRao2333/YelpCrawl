@@ -13,7 +13,7 @@ from pathlib import Path
 
 # init driver
 option = webdriver.ChromeOptions()
-# option.headless = True
+option.headless = True
 driver = webdriver.Chrome(options=option)
 
 
@@ -69,13 +69,13 @@ def get_input():
 
 
 def crawl(self, file):
-    for tab_element in find_elements_by_xpath(self, "//*[@class='tab-link js-tab-link tab-link--nav js-tab-link--nav']"):
-        tab_label = tab_element.get_attribute("data-media-tab-label")
-        if tab_label in finished_tabs or tab_label == "all":
-            continue
-
+    for tab_element in find_elements_by_xpath(self, "//a[contains(@class, 'tab-link--nav')][contains(@class, 'js-tab-link--nav')]"):
         tab_element.click()
         time.sleep(2)
+
+        tab_label = tab_element.find_element(by=By.XPATH, value="./span[2]").text
+        if tab_label in finished_tabs or "all" in tab_label.lower():
+            continue
         # click first image item
         find_element_by_xpath(self, "//*[@class='biz-shim js-lightbox-media-link js-analytics-click']").click()
 
@@ -99,7 +99,7 @@ def iterate(self, file) -> bool:
             parse(self, file)
 
         try:
-            next_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
+            wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
 
         except WebDriverException:
             try:
@@ -111,6 +111,7 @@ def iterate(self, file) -> bool:
             return True
 
         else:
+            next_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
             if next_element.get_attribute("href") is None:
                 try:
                     close_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[1]")
@@ -120,8 +121,11 @@ def iterate(self, file) -> bool:
 
                 return True
 
-            next_element.click()
-            time.sleep(2)
+            time.sleep(1)
+            try:
+                wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]").click()
+            except WebDriverException:
+                return True
 
 
 def parse(self, file):
@@ -229,8 +233,6 @@ if __name__ == '__main__':
         crawl(driver, output_file)
         output_file.close()
 
-        flag_writer = csv.writer(input_file)
-        flag_writer.writerow()
         print("Business_id {} completed.".format(business_id))
 
     # deinit
