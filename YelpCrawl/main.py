@@ -2,9 +2,10 @@ import os
 import csv
 import time
 import re
-import uuid
 import pickle
-from urllib.request import urlretrieve
+from urllib.request import urlopen
+from urllib.error import URLError, HTTPError
+from urllib.parse import urlparse, urlencode, parse_qsl
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -14,36 +15,56 @@ from pathlib import Path
 
 # init driver
 option = webdriver.ChromeOptions()
-option.headless = True
+# option.headless = True
 driver = webdriver.Chrome(options=option)
 
 
 def find_element_by_xpath(self, xpath):
-    return self.find_element(by=By.XPATH, value=xpath)
+    try:
+        return self.find_element(by=By.XPATH, value=xpath)
+
+    except WebDriverException:
+        return None
 
 
 def find_elements_by_xpath(self, xpath):
-    return self.find_elements(by=By.XPATH, value=xpath)
+    try:
+        return self.find_elements(by=By.XPATH, value=xpath)
+
+    except WebDriverException:
+        return None
 
 
 def find_element_by_id(self, value):
-    return self.find_elements(by=By.ID, value=value)
+    try:
+        return self.find_elements(by=By.ID, value=value)
+
+    except WebDriverException:
+        return None
 
 
 def wait_for_element_by_id(self, value):
-    return WebDriverWait(self, 10).until(ec.presence_of_element_located((By.ID, value)))
+    try:
+        return WebDriverWait(self, 10).until(ec.presence_of_element_located((By.ID, value)))
+
+    except WebDriverException:
+        return None
 
 
 def wait_for_element_by_xpath(self, value):
-    return WebDriverWait(self, 10).until(ec.presence_of_element_located((By.XPATH, value)))
+    try:
+        return WebDriverWait(self, 10).until(ec.presence_of_element_located((By.XPATH, value)))
+
+    except WebDriverException:
+        return None
 
 
 def find_elements_by_class_name(self, class_name):
-    return self.find_elements(by=By.CLASS_NAME, value=class_name)
+    try:
+        return self.find_elements(by=By.CLASS_NAME, value=class_name)
 
-
-def wait_for_staleness(self, element):
-    WebDriverWait(self, 10).until(ec.staleness_of(element))
+    except WebDriverException:
+        return None
 
 
 def makedir(path):
@@ -53,8 +74,28 @@ def makedir(path):
         os.makedirs(path)
 
 
-def save_img(img_url, path):
-    urlretrieve(img_url, path)
+def save_img(img_url, path) -> bool:
+    try:
+        response = urlopen(img_url)
+
+    except (URLError, HTTPError):
+        print("Image fetch failed.")
+        return False
+
+    try:
+        with open(path, 'wb') as img_file:
+            img_file.write(response.read())
+        return True
+
+    except OSError:
+        print("Image save failed.")
+        return False
+
+
+def get_param_from_url(url: str, key: str) -> str:
+    parsed = urlparse(url)
+    params = dict(parse_qsl(parsed.query))
+    return params[key] if params[key] is not None else ""
 
 
 def get_input():
@@ -70,7 +111,13 @@ def get_input():
 
 
 def crawl(self, file):
-    for tab_element in find_elements_by_xpath(self, "//a[contains(@class, 'tab-link--nav')][contains(@class, 'js-tab-link--nav')]"):
+    try:
+        element_list = find_elements_by_xpath(self, "//a[contains(@class, 'tab-link--nav')][contains(@class, 'js-tab-link--nav')]")
+    except WebDriverException:
+        print("Network error, retry it later...")
+        return
+
+    for tab_element in element_list:
         tab_element.click()
         time.sleep(2)
 
@@ -146,55 +193,45 @@ def parse(self, file):
             ).text
             is_merchant = "Yes"
         except WebDriverException:
-            user_id = ""
-            is_merchant = ""
+            pic_error_writer.writerow([self.current_url])
+            print("Fetching pic error, retry it later...")
+            return
 
     try:
         tab_label = find_element_by_xpath(
             self,
             "//a[@role='tab'][contains(@class, 'is-selected')]/span[contains(@class, 'tab-link_label')]"
         ).text
-    except WebDriverException:
-        tab_label = ""
-
-    try:
         comment = find_element_by_xpath(
             self,
             "//div[contains(@class, 'selected-photo-caption-text')]"
         ).text
-    except WebDriverException:
-        comment = ""
-
-    try:
         index = find_element_by_xpath(
             self,
             "//span[@class='media-count_current']"
         ).text
-    except WebDriverException:
-        index = ""
-
-    try:
         img = wait_for_element_by_xpath(
             self,
             "//img[@class='photo-box-img'][@loading='auto']"
         ).get_attribute("src")
-    except WebDriverException:
-        img = ""
-
-    try:
         date = find_element_by_xpath(
             self,
             "//span[contains(@class, 'selected-photo-upload-date')]"
         ).text
     except WebDriverException:
-        date = ""
+        pic_error_writer.writerow([self.current_url])
+        print("Fetching pic error, retry it later...")
+        return
 
     if img:
-        image_name = f"[{tab_label}] {index}" if index else f"[{tab_label}] {uuid.uuid4().hex}"
+        image_name = f"[{tab_label}] {index}"
         image_path = os.path.join(img_folder_path, image_name + ".jpg")
         save_img(img, image_path)
+
     else:
-        image_name = "N/A"
+        pic_error_writer.writerow([self.current_url])
+        print("Fetching pic error, retry it later...")
+        return
 
     writer.writerow([
         tab_label,
@@ -209,10 +246,16 @@ def parse(self, file):
 
 
 if __name__ == '__main__':
-    makedir("./Desktop/YelpResults")
+    makedir("./Desktop/YelpResults/errors")
 
     input_path = Path(__file__).with_name("stores.csv")
     input_file = input_path.open(mode="r", encoding="utf-8-sig")
+    store_error_file_path = os.path.join("./Desktop/YelpResults/errors", "store_error.csv")
+    store_error_file = open(store_error_file_path, "w", encoding="utf-8-sig")
+    store_error_writer = csv.writer(store_error_file)
+    pic_error_file_path = os.path.join("./Desktop/YelpResults/errors", "pic_error.csv")
+    pic_error_file = open(pic_error_file_path, "w", encoding="utf-8-sig")
+    pic_error_writer = csv.writer(pic_error_file)
 
     # do your job
     for business_id in get_input():
@@ -234,11 +277,11 @@ if __name__ == '__main__':
         makedir(folder_path)
         img_folder_path = os.path.join(folder_path, "img")
         makedir(img_folder_path)
-        output_file_path = os.path.join(folder_path, "manifest.csv")
 
+        output_file_path = os.path.join(folder_path, "manifest.csv")
         output_file = open(output_file_path, "w", encoding="utf-8-sig")
-        csv_writer = csv.writer(output_file)
-        csv_writer.writerow(["category", "img", "comment", "user_id", "is_merchant", "date"])
+        output_writer = csv.writer(output_file)
+        output_writer.writerow(["category", "img", "comment", "user_id", "is_merchant", "date"])
         crawl(driver, output_file)
         output_file.close()
 
@@ -246,3 +289,5 @@ if __name__ == '__main__':
 
     # deinit
     driver.quit()
+    store_error_file.close()
+    pic_error_file.close()
