@@ -32,7 +32,7 @@ def find_elements_by_xpath(self, xpath):
         return self.find_elements(by=By.XPATH, value=xpath)
 
     except WebDriverException:
-        return None
+        return list()
 
 
 def find_element_by_id(self, value):
@@ -64,7 +64,7 @@ def find_elements_by_class_name(self, class_name):
         return self.find_elements(by=By.CLASS_NAME, value=class_name)
 
     except WebDriverException:
-        return None
+        return list()
 
 
 def makedir(path):
@@ -111,21 +111,33 @@ def get_input():
 
 
 def crawl(self, file):
-    try:
-        element_list = find_elements_by_xpath(self, "//a[contains(@class, 'tab-link--nav')][contains(@class, 'js-tab-link--nav')]")
-    except WebDriverException:
-        print("Network error, retry it later...")
+    tab_list = find_elements_by_xpath(self, "//a[contains(@class, 'tab-link--nav')][contains(@class, 'js-tab-link--nav')]")
+    if not tab_list:
+        store_error_writer.writerow([self.current_url])
+        print("Network error, retry this store later...")
         return
 
-    for tab_element in element_list:
-        tab_element.click()
-        time.sleep(2)
+    for tab_element in tab_list:
+        try:
+            tab_element.click()
+            time.sleep(2)
+        except WebDriverException:
+            store_error_writer.writerow([self.current_url])
+            print("Network error, retry this store later...")
+            return
 
-        tab_label = tab_element.find_element(by=By.XPATH, value="./span[2]").text
+        tab_label_e = find_element_by_xpath(tab_element, "./span[2]")
+        tab_label = tab_label_e.text if tab_label_e is not None else ""
         if tab_label in finished_tabs or "all" in tab_label.lower():
             continue
         # click first image item
-        find_element_by_xpath(self, "//*[@class='biz-shim js-lightbox-media-link js-analytics-click']").click()
+        first_img = find_element_by_xpath(self, "//*[@class='biz-shim js-lightbox-media-link js-analytics-click']")
+        if first_img is None or not tab_label:
+            store_error_writer.writerow([self.current_url])
+            print("Network error, retry this store later...")
+            return
+
+        first_img.click()
 
         if iterate(self, file):
             finished_tabs.append(tab_label)
@@ -137,6 +149,7 @@ def crawl(self, file):
             time.sleep(2)
 
 
+
 def iterate(self, file) -> bool:
     while True:
         try:
@@ -146,29 +159,15 @@ def iterate(self, file) -> bool:
         else:
             parse(self, file)
 
-        try:
-            wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
+        next_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
 
-        except WebDriverException:
-            try:
-                close_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[1]")
+        if next_element is None or next_element.get_attribute("href") is None:
+            close_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[1]")
+            if close_element is not None:
                 close_element.click()
-            except WebDriverException:
-                pass
-
             return True
 
         else:
-            next_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
-            if next_element.get_attribute("href") is None:
-                try:
-                    close_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[1]")
-                    close_element.click()
-                except WebDriverException:
-                    pass
-
-                return True
-
             time.sleep(2)
             try:
                 wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]").click()
@@ -176,9 +175,7 @@ def iterate(self, file) -> bool:
                 return True
 
 
-def parse(self, file):
-    writer = csv.writer(file)
-
+def parse(self, file) -> bool:
     try:
         user_id = find_element_by_xpath(
             self,
@@ -195,7 +192,7 @@ def parse(self, file):
         except WebDriverException:
             pic_error_writer.writerow([self.current_url])
             print("Fetching pic error, retry it later...")
-            return
+            return False
 
     try:
         tab_label = find_element_by_xpath(
@@ -221,7 +218,7 @@ def parse(self, file):
     except WebDriverException:
         pic_error_writer.writerow([self.current_url])
         print("Fetching pic error, retry it later...")
-        return
+        return False
 
     if img:
         image_name = f"[{tab_label}] {index}"
@@ -231,18 +228,25 @@ def parse(self, file):
     else:
         pic_error_writer.writerow([self.current_url])
         print("Fetching pic error, retry it later...")
-        return
+        return False
 
-    writer.writerow([
-        tab_label,
-        image_name,
-        comment,
-        user_id,
-        is_merchant,
-        date
-    ])
-    file.flush()
-    print("Fetched " + image_name)
+    try:
+        writer = csv.writer(file)
+        writer.writerow([
+            tab_label,
+            image_name,
+            comment,
+            user_id,
+            is_merchant,
+            date
+        ])
+        file.flush()
+        print("Fetched " + image_name)
+        return True
+    except OSError:
+        pic_error_writer.writerow([self.current_url])
+        print("Fetche image failed, try it later...")
+        return False
 
 
 if __name__ == '__main__':
