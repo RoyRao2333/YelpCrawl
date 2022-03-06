@@ -3,9 +3,10 @@ import csv
 import time
 import re
 import pickle
-from urllib.request import urlopen
-from urllib.error import URLError, HTTPError
-from urllib.parse import urlparse, urlencode, parse_qsl
+import requests
+import shutil
+from requests.exceptions import RequestException, ConnectionError
+from urllib.parse import urlparse, parse_qsl
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -13,9 +14,10 @@ from selenium.webdriver.support import expected_conditions as ec
 from selenium.common.exceptions import WebDriverException
 from pathlib import Path
 
+
 # init driver
 option = webdriver.ChromeOptions()
-# option.headless = True
+option.headless = True
 driver = webdriver.Chrome(options=option)
 
 
@@ -76,19 +78,27 @@ def makedir(path):
 
 def save_img(img_url, path) -> bool:
     try:
-        response = urlopen(img_url)
+        response = requests.get(img_url, stream=True)
 
-    except (URLError, HTTPError):
-        print("Image fetch failed.")
+    except (RequestException, ConnectionError) as error:
+        print(f"Image fetch failed with error {type(error)}: {error}.")
         return False
+
+    else:
+        if response.status_code == 200:
+            response.raw.decode_content = True
+
+        else:
+            print('Image Couldn\'t be retreived')
+            return False
 
     try:
         with open(path, 'wb') as img_file:
-            img_file.write(response.read())
+            shutil.copyfileobj(response.raw, img_file)
         return True
 
-    except OSError:
-        print("Image save failed.")
+    except OSError as error:
+        print(f"Image save failed with error {type(error)}: {error}.")
         return False
 
 
@@ -117,13 +127,21 @@ def get_input(file):
 def crawl(self, output) -> bool:
     tab_list = find_elements_by_xpath(self, "//a[contains(@class, 'tab-link--nav')][contains(@class, 'js-tab-link--nav')]")
     if not tab_list:
+        print("Site is not completely loaded. Retry it again later...")
         return False
 
     for tab_element in tab_list:
         try:
             tab_element.click()
-        except WebDriverException:
-            return False
+        except WebDriverException as error:
+            print(f"Selecting tab failed with error {type(error)}: {error}. Trying to expand sections...")
+            try:
+                find_element_by_xpath(self, "//div[contains(@class, 'paged-scroll-container_arrow-right')]").click()
+                time.sleep(2)
+                tab_element.click()
+            except (WebDriverException, ValueError) as error:
+                print(f"Expanding tab failed with error {type(error)}: {error}...")
+                return False
 
         time.sleep(2)
         tab_label_e = find_element_by_xpath(tab_element, "./span[2]")
@@ -135,6 +153,7 @@ def crawl(self, output) -> bool:
         # click first image item
         first_img = find_element_by_xpath(self, "//*[@class='biz-shim js-lightbox-media-link js-analytics-click']")
         if first_img is None or not tab_label:
+            print("Site is not completely loaded. Retry it again later...")
             return False
 
         first_img.click()
@@ -152,6 +171,7 @@ def crawl(self, output) -> bool:
 def iterate(self, output) -> bool:
     while True:
         if wait_for_element_by_id(self, "lightbox") is None:
+            print("Lightbox is missing...")
             return False
 
         else:
@@ -171,8 +191,16 @@ def iterate(self, output) -> bool:
             try:
                 next_element.click()
 
-            except WebDriverException:
-                return False
+            except WebDriverException as error:
+                print(f"{type(error)}: {error}")
+                print("Retrying...")
+
+                try:
+                    print("Continuing!")
+                    find_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]").click()
+                except (WebDriverException, ValueError) as error:
+                    print(f"{type(error)}: {error}")
+                    return False
 
 
 def parse(self, file) -> bool:
@@ -182,16 +210,16 @@ def parse(self, file) -> bool:
             "//a[contains(@class, 'user-display-name')]"
         ).text
         is_merchant = "No"
-    except WebDriverException:
+    except (AttributeError, WebDriverException):
         try:
             user_id = find_element_by_xpath(
                 self,
                 "//a[@data-analytics-label='biz-name']/span"
             ).text
             is_merchant = "Yes"
-        except WebDriverException:
+        except (AttributeError, WebDriverException) as error:
             pic_error_writer.writerow([self.current_url])
-            print("Fetching pic error, retry it later...")
+            print(f"Fetching pic failed with error {type(error)}: {error}, retry it later...")
             return False
 
     try:
@@ -199,7 +227,7 @@ def parse(self, file) -> bool:
             self,
             "//a[@role='tab'][contains(@class, 'is-selected')]/span[contains(@class, 'tab-link_label')]"
         ).text
-        comment = find_element_by_xpath(
+        comment = wait_for_element_by_xpath(
             self,
             "//div[contains(@class, 'selected-photo-caption-text')]"
         ).text
@@ -211,13 +239,13 @@ def parse(self, file) -> bool:
             self,
             "//img[@class='photo-box-img'][@loading='auto']"
         ).get_attribute("src")
-        date = find_element_by_xpath(
+        date = wait_for_element_by_xpath(
             self,
             "//span[contains(@class, 'selected-photo-upload-date')]"
         ).text
-    except WebDriverException:
+    except (AttributeError, WebDriverException) as error:
         pic_error_writer.writerow([self.current_url])
-        print("Fetching pic error, retry it later...")
+        print(f"Fetching pic failed with error {type(error)}: {error}, retry it later...")
         return False
 
     if img:
@@ -227,11 +255,12 @@ def parse(self, file) -> bool:
 
         if not save_success:
             pic_error_writer.writerow([self.current_url])
+            print("Saving pic failed, retry it later...")
             return False
 
     else:
         pic_error_writer.writerow([self.current_url])
-        print("Fetching pic error, retry it later...")
+        print("Fetching pic failed, retry it later...")
         return False
 
     try:
@@ -247,9 +276,9 @@ def parse(self, file) -> bool:
         file.flush()
         print("Fetched " + image_name)
         return True
-    except OSError:
+    except OSError as error:
         pic_error_writer.writerow([self.current_url])
-        print("Fetche image failed, try it later...")
+        print(f"Writing output failed with error {type(error)}: {error}, try it later...")
         return False
 
 
@@ -359,7 +388,8 @@ if __name__ == '__main__':
         output_writer = csv.writer(output_file)
         output_writer.writerow(["category", "img", "comment", "user_id", "is_merchant", "date"])
 
-        if not crawl(driver, output_file):
+        success = crawl(driver, output_file)
+        if not success:
             store_error_writer.writerow([driver.current_url])
             print("Network error, retry this store later...")
         else:
@@ -367,10 +397,10 @@ if __name__ == '__main__':
 
         output_file.close()
 
-    while not retry():
-        continue
-
-    print("All retries completed.")
+    # while not retry():
+    #     continue
+    #
+    # print("All retries completed.")
 
     # deinit
     driver.quit()
