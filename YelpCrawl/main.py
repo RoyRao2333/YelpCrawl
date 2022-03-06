@@ -6,6 +6,8 @@ import pickle
 import requests
 import shutil
 from requests.exceptions import RequestException, ConnectionError
+from requests.packages.urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 from urllib.parse import urlparse, parse_qsl
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -78,7 +80,10 @@ def makedir(path):
 
 def save_img(img_url, path) -> bool:
     try:
-        response = requests.get(img_url, stream=True)
+        session = requests.Session()
+        adapter = HTTPAdapter(max_retries=Retry(connect=3, backoff_factor=0.5))
+        session.mount('https://', adapter)
+        response = session.get(img_url, stream=True)
 
     except (RequestException, ConnectionError) as error:
         print(f"Image fetch failed with error {type(error)}: {error}.")
