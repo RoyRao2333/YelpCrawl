@@ -162,9 +162,9 @@ def crawl(self, output) -> bool:
             return False
 
         try:
-            first_img.click()
+            wait_for_element_by_xpath(self, "//*[@class='biz-shim js-lightbox-media-link js-analytics-click']").click()
 
-        except WebDriverException as error:
+        except (WebDriverException, ValueError) as error:
             print(f"Selecting item failed with error {type(error)}: {error}...")
             return False
 
