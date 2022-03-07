@@ -334,8 +334,15 @@ def retry() -> bool:
 
         biz_element = find_element_by_xpath(driver, "//link[contains(@href, 'biz_id')]")
         if biz_element is not None:
-            ori_link = biz_element.get_attribute("href")
-            biz_id = get_param_from_url(ori_link, "biz_id")
+           try:
+               ori_link = biz_element.get_attribute("href")
+
+           except WebDriverException as error:
+               print(f"{type(error)}: {error}")
+               return False
+
+           else:
+               biz_id = get_param_from_url(ori_link, "biz_id")
 
         else:
             print("Network error, retry this store later...")
