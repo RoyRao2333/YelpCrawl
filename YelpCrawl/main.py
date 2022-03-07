@@ -161,7 +161,13 @@ def crawl(self, output) -> bool:
             print("Site is not completely loaded. Retry it again later...")
             return False
 
-        first_img.click()
+        try:
+            first_img.click()
+
+        except WebDriverException as error:
+            print(f"Selecting item failed with error {type(error)}: {error}...")
+            return False
+
 
         if iterate(self, output):
             print(f"Tab {tab_label} completed.")
