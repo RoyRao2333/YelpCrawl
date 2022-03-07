@@ -183,29 +183,56 @@ def iterate(self, output) -> bool:
             parse(self, output)
 
         next_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
+        next_href = None
 
-        if next_element is None or next_element.get_attribute("href") is None:
-            close_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[1]")
-            if close_element is not None:
-                close_element.click()
-            return True
+        try:
+            next_href = next_element.get_attribute("href")
 
-        else:
-            time.sleep(2)
+        except (WebDriverException, ValueError) as error:
+            print(f"{type(error)}: {error}")
+            print("Retrying...")
 
             try:
-                next_element.click()
+                next_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]")
+                next_href = next_element.get_attribute("href")
 
             except WebDriverException as error:
                 print(f"{type(error)}: {error}")
-                print("Retrying...")
+                print("Skipping...")
+                return False
 
+            except ValueError as error:
+                close_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[1]")
                 try:
-                    print("Continuing!")
-                    find_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]").click()
-                except (WebDriverException, ValueError) as error:
-                    print(f"{type(error)}: {error}")
-                    return False
+                    close_element.click()
+
+                finally:
+                    return True
+
+        finally:
+            if next_href is None:
+                close_element = wait_for_element_by_xpath(self, "//*[@id='lightbox-inner']/div[1]")
+                try:
+                    close_element.click()
+
+                finally:
+                    return True
+
+        time.sleep(2)
+
+        try:
+            next_element.click()
+
+        except WebDriverException as error:
+            print(f"{type(error)}: {error}")
+            print("Retrying...")
+
+            try:
+                find_element_by_xpath(self, "//*[@id='lightbox-inner']/div[2]/div/div/div[2]/a[2]").click()
+                print("Continuing!")
+            except (WebDriverException, ValueError) as error:
+                print(f"{type(error)}: {error}")
+                return False
 
 
 def parse(self, file) -> bool:
