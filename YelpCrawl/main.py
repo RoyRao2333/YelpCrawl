@@ -217,7 +217,6 @@ def crawl(self, output) -> bool:
     return True
 
 
-
 def parse(self, _tab_name, output):
     _start_index = 0
     while True:
